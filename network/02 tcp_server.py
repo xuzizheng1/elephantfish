@@ -1,10 +1,23 @@
-#!/usr/bin/env pypy
-# -*- coding: utf-8 -*-
-
+"""
+tcp服务端的创建步骤：
+    1. create a socket (reuse the address)
+    2. bind an address
+    3. listen
+    4. accept a request
+    5. receive data (only bytes can be received)
+    6. send data (only bytes can be sent)
+    7. tcp server do not close
+tcp服务端如何服务多个用户：
+    使用多任务（进程，线程，协程）解决阻塞问题
+"""
 from __future__ import print_function
+import socket
+from threading import Thread
 import re, sys, time
 from itertools import count
 from collections import namedtuple
+
+from network.config import PORT
 
 piece = {'P': 44, 'N': 108, 'B': 23, 'R': 233, 'A': 23, 'C': 101, 'K': 2500}
 
@@ -431,15 +444,15 @@ def print_pos(pos):
     print('    ａｂｃｄｅｆｇｈｉ\n\n')
 
 
-def main():
+def main2():
     hist = [Position(initial, 0)]
     searcher = Searcher()
     while True:
         print_pos(hist[-1])
 
-        if hist[-1].score <= -MATE_LOWER:
-            print("You lost")
-            break
+        # if hist[-1].score <= -MATE_LOWER:
+        #     print("You lost")
+        #     break
 
         # We query the user until she enters a (pseudo) legal move.
         move = None
@@ -449,16 +462,16 @@ def main():
                 move = parse(match.group(1)), parse(match.group(2))
             else:
                 # Inform the user when invalid input (e.g. "help") is entered
-                print("Please enter a move like h2e2")
+                error_tip = "Please enter a move like h2e2"
         hist.append(hist[-1].move(move))
 
         # After our move we rotate the board and print it again.
         # This allows us to see the effect of our move.
         print_pos(hist[-1].rotate())
 
-        if hist[-1].score <= -MATE_LOWER:
-            print("You won")
-            break
+        # if hist[-1].score <= -MATE_LOWER:
+        #     print("You won")
+        #     break
 
         # Fire up the engine to look for a move.
         start = time.time()
@@ -473,6 +486,86 @@ def main():
         # 'back rotate' the move before printing it.
         print("Think depth: {} My move: {}".format(_depth, render(255 - move[0] - 1) + render(255 - move[1] - 1)))
         hist.append(hist[-1].move(move))
+
+
+def _send(one_server_socket, message):
+    one_server_socket.send(message.encode())
+
+
+def chessboard(pos):
+    board = '\n'
+    uni_pieces = {'R': '俥', 'N': '傌', 'B': '相', 'A': '仕', 'K': '帥', 'P': '兵', 'C': '炮',
+                  'r': '車', 'n': '馬', 'b': '象', 'a': '士', 'k': '將', 'p': '卒', 'c': '砲', '.': '～'}
+    for i, row in enumerate(pos.board.split()):
+        board = board + '  ' + str(9 - i) + ' ' + ''.join(uni_pieces.get(p, p) for p in row) + '\n'
+    board += '    ａｂｃｄｅｆｇｈｉ\n'
+    return board
+
+
+def serve_one(one_server_socket, cli_addr):
+    message_num = 1
+    while True:
+        print_pos(hist[-1])
+        board = chessboard(hist[-1])
+        _send(one_server_socket, board)
+        move = None
+        # 5. receive data (only bytes can be received)
+        recv_data = one_server_socket.recv(1024).decode()
+        # if recv_data:
+        print(f'{cli_addr}: {recv_data}')
+        while move not in hist[-1].gen_moves():
+            match = re.match('([a-i][0-9])' * 2, recv_data)
+            if match:
+                move = parse(match.group(1)), parse(match.group(2))
+                message_num += 1
+            else:
+                # Inform the user when invalid input (e.g. "help") is entered
+                error_tip = "Please enter a move like h2e2"
+                _send(one_server_socket, error_tip)
+        hist.append(hist[-1].move(move))
+        print_pos(hist[-1].rotate())
+        if message_num % 2 == 0:
+            _send(one_server_socket, 'Waiting...\n')
+            continue
+        # else:
+        #     one_server_socket.close()
+        #     print(str(cli_addr) + ' offline...')
+        #     break
+
+        # 6. send data (only bytes can be sent)
+        # data = 'we received your message..%s' % message_num
+        # _send(one_server_socket, data)
+
+
+hist = [Position(initial, 0)]
+
+
+def main():
+    # 1. create a socket (reuse the address)
+    server_socket = socket.socket()
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+
+    # 2. bind an address
+    addr = ('', PORT)
+    server_socket.bind(addr)
+
+    # 3. listen
+    server_socket.listen(128)
+
+    print('Server Working...')
+    print(addr)
+    print('Waiting for Client...')
+
+    clients = []
+
+    for i in range(3):
+        # 4. accept a request
+        one_server_socket, cli_addr = server_socket.accept()
+        print(str(cli_addr) + ' online !')
+        print('-' * 50)
+        clients.append(addr)
+        # serve_one(one_server_socket, cli_addr)
+        Thread(target=serve_one, args=(one_server_socket, cli_addr), daemon=True, ).start()
 
 
 if __name__ == '__main__':
