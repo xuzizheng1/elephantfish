@@ -503,7 +503,7 @@ def chessboard(pos):
 
 
 def serve_one(one_server_socket, cli_addr):
-    message_num = 1
+    # message_num = 1
     while True:
         print_pos(hist[-1])
         board = chessboard(hist[-1])
@@ -517,16 +517,18 @@ def serve_one(one_server_socket, cli_addr):
             match = re.match('([a-i][0-9])' * 2, recv_data)
             if match:
                 move = parse(match.group(1)), parse(match.group(2))
-                message_num += 1
+                # message_num += 1
             else:
                 # Inform the user when invalid input (e.g. "help") is entered
                 error_tip = "Please enter a move like h2e2"
                 _send(one_server_socket, error_tip)
         hist.append(hist[-1].move(move))
         print_pos(hist[-1].rotate())
-        if message_num % 2 == 0:
-            _send(one_server_socket, 'Waiting...\n')
-            continue
+        board = chessboard(hist[-1])
+        _send(one_server_socket, board)
+        # if message_num % 2 == 0:
+        #     _send(one_server_socket, 'Waiting...\n')
+        #     continue
         # else:
         #     one_server_socket.close()
         #     print(str(cli_addr) + ' offline...')
@@ -563,7 +565,8 @@ def main():
         one_server_socket, cli_addr = server_socket.accept()
         print(str(cli_addr) + ' online !')
         print('-' * 50)
-        clients.append(addr)
+        clients.append(cli_addr)
+        print(f'{len(clients)}个客户端连接：\n\t{clients}')
         # serve_one(one_server_socket, cli_addr)
         Thread(target=serve_one, args=(one_server_socket, cli_addr), daemon=True, ).start()
 
